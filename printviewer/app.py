@@ -1,4 +1,4 @@
-﻿import os
+import os
 import csv
 import re
 import locale
@@ -352,7 +352,24 @@ def folder_view(folder_path=""):
     encoded_files = [quote(f, safe="") for f in files]
     
     # 現在のパスもエンコード（親フォルダへのリンク用）
-    current_path_encoded = folder_path
+    # 先頭・末尾のスラッシュを除去し、連続するスラッシュを正規化（パス結合用）
+    if folder_path:
+        # 連続するスラッシュを繰り返し1つに統一してから、先頭・末尾を削除
+        normalized = folder_path
+        while '//' in normalized:
+            normalized = normalized.replace('//', '/')
+        current_path_encoded = normalized.strip('/')
+    else:
+        current_path_encoded = ""
+    
+    # 表示用のパス（デコード済み、連続するスラッシュを正規化して先頭・末尾を除去）
+    if decoded_folder_path:
+        normalized_display = decoded_folder_path
+        while '//' in normalized_display:
+            normalized_display = normalized_display.replace('//', '/')
+        current_path_display = normalized_display.strip('/')
+    else:
+        current_path_display = ""
     
     return render_template(
         "index.html",
@@ -361,6 +378,7 @@ def folder_view(folder_path=""):
         encoded_folders=encoded_folders,  # URL用（エンコード済み）
         encoded_files=encoded_files,  # URL用（エンコード済み）
         current_path=current_path_encoded,  # URL用（エンコード済み）
+        current_path_display=current_path_display,  # 表示用（デコード済み）
         username=session.get("username", "unknown")
     )
 
