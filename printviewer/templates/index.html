@@ -340,6 +340,81 @@
     .delete-mapping-btn:hover {
       background: #c82333;
     }
+    .search-container {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .search-box-wrapper {
+      position: relative;
+      width: 300px;
+    }
+    .search-box {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .search-input {
+      width: 100%;
+      padding: 8px 12px 8px 35px;
+      border: 2px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .search-input:focus {
+      outline: none;
+      border-color: #0078d4;
+    }
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      color: #666;
+      pointer-events: none;
+    }
+    .search-results {
+      position: absolute;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      max-height: 400px;
+      overflow-y: auto;
+      z-index: 100;
+      width: 100%;
+      margin-top: 5px;
+      display: none;
+    }
+    .search-results.show {
+      display: block;
+    }
+    .search-result-item {
+      padding: 12px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .search-result-item:hover {
+      background: #f5f5f5;
+    }
+    .search-result-item:last-child {
+      border-bottom: none;
+    }
+    .search-result-file-name {
+      font-weight: 600;
+      color: #0078d4;
+      margin-bottom: 4px;
+    }
+    .search-result-folder {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .search-result-mapping {
+      font-size: 12px;
+      color: #888;
+    }
   </style>
 </head>
 <body>
@@ -367,6 +442,15 @@
         {% if current_path_display %}
           <span class="breadcrumb-path">{{ current_path_display }}</span>
         {% endif %}
+      </div>
+      <div class="search-container">
+        <div class="search-box-wrapper">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" id="searchInput" placeholder="ファイル名または塾テキストで検索..." oninput="handleSearch()">
+          </div>
+          <div class="search-results" id="searchResults"></div>
+        </div>
       </div>
     {% endif %}
 
@@ -570,6 +654,99 @@
         closeTextMappingModal();
       }
     }
+
+    // 検索機能
+    let searchTimeout = null;
+
+    function getCurrentSubject() {
+      // 現在のパスから科目を抽出（例: "算数/6年" → "算数"）
+      const breadcrumbPath = document.querySelector('.breadcrumb-path');
+      if (breadcrumbPath) {
+        const path = breadcrumbPath.textContent.trim();
+        const firstPart = path.split('/')[0];
+        // 国語、算数、理科、社会のいずれかなら返す
+        if (['国語', '算数', '理科', '社会'].includes(firstPart)) {
+          return firstPart;
+        }
+      }
+      return '';
+    }
+
+    function handleSearch() {
+      const keyword = document.getElementById('searchInput').value.trim();
+      const resultsDiv = document.getElementById('searchResults');
+      
+      // 入力が空の場合は結果を非表示
+      if (!keyword) {
+        resultsDiv.classList.remove('show');
+        return;
+      }
+
+      // デバウンス（入力が止まってから0.3秒後に検索）
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        performSearch(keyword);
+      }, 300);
+    }
+
+    function performSearch(keyword) {
+      const resultsDiv = document.getElementById('searchResults');
+      resultsDiv.innerHTML = '検索中...';
+      resultsDiv.classList.add('show');
+
+      const subject = getCurrentSubject();
+      const url = `/api/search?subject=${encodeURIComponent(subject)}&keyword=${encodeURIComponent(keyword)}`;
+      
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          displaySearchResults(data.results);
+        })
+        .catch(error => {
+          console.error('Search error:', error);
+          resultsDiv.innerHTML = '<div class="search-result-item">検索エラーが発生しました</div>';
+        });
+    }
+
+    function displaySearchResults(results) {
+      const resultsDiv = document.getElementById('searchResults');
+      
+      if (results.length === 0) {
+        resultsDiv.innerHTML = '<div class="search-result-item">検索結果が見つかりませんでした</div>';
+        return;
+      }
+
+      let html = '';
+      results.forEach(result => {
+        const filePathEncoded = encodeURIComponent(result.file_path);
+        html += `<div class="search-result-item" onclick="window.location.href='/view/${filePathEncoded}'">`;
+        html += `<div class="search-result-file-name">${escapeHtml(result.file_name)}</div>`;
+        if (result.folder_path) {
+          html += `<div class="search-result-folder">${escapeHtml(result.folder_path)}</div>`;
+        }
+        if (result.matching_text_mappings && result.matching_text_mappings.length > 0) {
+          const mappings = result.matching_text_mappings.map(m => `${escapeHtml(m.juku_name)}:${escapeHtml(m.text_name)}`).join(', ');
+          html += `<div class="search-result-mapping">${mappings}</div>`;
+        }
+        html += '</div>';
+      });
+      
+      resultsDiv.innerHTML = html;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // 検索結果の外側をクリックしたら閉じる
+    document.addEventListener('click', function(event) {
+      const searchWrapper = document.querySelector('.search-box-wrapper');
+      if (!searchWrapper.contains(event.target)) {
+        document.getElementById('searchResults').classList.remove('show');
+      }
+    });
   </script>
 </body>
 </html>

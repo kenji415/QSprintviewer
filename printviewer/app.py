@@ -268,6 +268,45 @@ def get_folders_and_files(folder_path=""):
     return folders, files
 
 
+def get_all_pdf_files(subject_filter=""):
+    """指定された科目のすべてのPDFファイルを再帰的に取得"""
+    results = []  # [{"file_path": "算数/6年/file.pdf", "file_name": "file.pdf", "folder_path": "算数/6年"}, ...]
+    
+    def scan_directory(directory_path, relative_path=""):
+        """ディレクトリを再帰的にスキャン"""
+        if not os.path.exists(directory_path):
+            return
+        
+        try:
+            for item in os.scandir(directory_path):
+                if item.is_dir():
+                    # 科目フィルターが指定されている場合、最初の階層でフィルタリング
+                    if subject_filter and not relative_path:
+                        if item.name != subject_filter:
+                            continue
+                    new_relative_path = os.path.join(relative_path, item.name) if relative_path else item.name
+                    new_relative_path = new_relative_path.replace('\\', '/')
+                    scan_directory(item.path, new_relative_path)
+                elif item.name.lower().endswith(".pdf"):
+                    # 科目フィルターが指定されている場合、最初の階層でフィルタリング
+                    if subject_filter and not relative_path:
+                        # ファイルが直接PDF_DIRにある場合はスキップ（科目フォルダ内のファイルのみ）
+                        continue
+                    # パスを正規化（Windowsパス区切り文字を統一）
+                    file_path = os.path.join(relative_path, item.name) if relative_path else item.name
+                    file_path = file_path.replace('\\', '/')
+                    results.append({
+                        "file_path": file_path,
+                        "file_name": item.name,
+                        "folder_path": relative_path.replace('\\', '/') if relative_path else ""
+                    })
+        except Exception as e:
+            print(f"Error scanning directory {directory_path}: {e}")
+    
+    scan_directory(PDF_DIR, "")
+    return results
+
+
 def get_students_file(username):
     """ユーザーごとの生徒ファイルパスを取得"""
     return os.path.join(STUDENTS_DIR, f"{username}.csv")
@@ -497,6 +536,61 @@ def delete_text_mapping_api():
     
     delete_text_mapping(file_path, juku_name, text_name)
     return {"success": True}
+
+
+@app.route("/api/search", methods=["GET"])
+@login_required
+def search_files():
+    """ファイル検索API"""
+    subject = request.args.get("subject", "").strip()
+    keyword = request.args.get("keyword", "").strip()
+    
+    if not keyword:
+        return {"results": []}
+    
+    # すべてのPDFファイルを取得
+    all_files = get_all_pdf_files(subject_filter=subject)
+    
+    # テキスト対応情報を読み込む
+    text_mappings = load_text_mappings()
+    
+    results = []
+    keyword_lower = keyword.lower()
+    
+    for file_info in all_files:
+        file_path_normalized = normalize_file_path(file_info["file_path"])
+        file_name = file_info["file_name"]
+        folder_path = file_info["folder_path"]
+        
+        # ファイル名で部分一致検索
+        matched = keyword_lower in file_name.lower()
+        matching_text_mappings = []
+        
+        # テキストマッピング情報で検索
+        if file_path_normalized in text_mappings:
+            for mapping in text_mappings[file_path_normalized]:
+                if keyword_lower in mapping["juku_name"].lower() or keyword_lower in mapping["text_name"].lower():
+                    matched = True
+                    matching_text_mappings.append(mapping)
+        else:
+            # ファイル名だけで検索（フォルダパスが異なる場合に対応）
+            for saved_path, mappings_list in text_mappings.items():
+                saved_filename = saved_path.split('/')[-1] if '/' in saved_path else saved_path
+                if saved_filename == file_name:
+                    for mapping in mappings_list:
+                        if keyword_lower in mapping["juku_name"].lower() or keyword_lower in mapping["text_name"].lower():
+                            matched = True
+                            matching_text_mappings.append(mapping)
+        
+        if matched:
+            results.append({
+                "file_path": file_path_normalized,
+                "file_name": file_name,
+                "folder_path": folder_path,
+                "matching_text_mappings": matching_text_mappings
+            })
+    
+    return {"results": results}
 
 
 @app.route("/folder/")
