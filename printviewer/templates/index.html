@@ -162,6 +162,7 @@
       margin-bottom: 10px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 15px;
       padding: 10px 0;
     }
@@ -340,16 +341,9 @@
     .delete-mapping-btn:hover {
       background: #c82333;
     }
-    .search-container {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
-      align-items: center;
-      justify-content: flex-end;
-    }
     .search-box-wrapper {
       position: relative;
-      width: 300px;
+      width: 250px;
     }
     .search-box {
       position: relative;
@@ -438,16 +432,16 @@
     {% if current_path %}
       {% set parent_path = current_path.rsplit('/', 1)[0] if '/' in current_path else '' %}
       <div class="breadcrumb">
-        <a href="/folder/{{ parent_path }}">← 戻る</a>
-        {% if current_path_display %}
-          <span class="breadcrumb-path">{{ current_path_display }}</span>
-        {% endif %}
-      </div>
-      <div class="search-container">
+        <div style="display: flex; align-items: center; gap: 15px;">
+          <a href="/folder/{{ parent_path }}">← 戻る</a>
+          {% if current_path_display %}
+            <span class="breadcrumb-path">{{ current_path_display }}</span>
+          {% endif %}
+        </div>
         <div class="search-box-wrapper">
           <div class="search-box">
             <span class="search-icon">🔍</span>
-            <input type="text" class="search-input" id="searchInput" placeholder="ファイル名または塾テキストで検索..." oninput="handleSearch()">
+            <input type="text" class="search-input" id="searchInput" placeholder="ファイル検索" oninput="handleSearch()">
           </div>
           <div class="search-results" id="searchResults"></div>
         </div>
