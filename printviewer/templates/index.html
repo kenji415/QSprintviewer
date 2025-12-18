@@ -179,6 +179,167 @@
       font-size: 16px;
       font-weight: 500;
     }
+    .file-item {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      position: relative;
+    }
+    .file-item-content {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      margin-right: 50px;
+      padding-right: 350px;
+    }
+    .file-text-mapping {
+      color: #666;
+      font-size: 14px;
+      margin-left: 15px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      flex: 1;
+    }
+    .file-text-mapping-item {
+      background: #f0f0f0;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .add-text-btn {
+      background: #0078d4;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      font-size: 20px;
+      cursor: pointer;
+      position: absolute;
+      right: 370px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+    }
+    .add-text-btn:hover {
+      background: #005a9e;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.5);
+    }
+    .modal-content {
+      background-color: white;
+      margin: 5% auto;
+      padding: 20px;
+      border: 1px solid #888;
+      width: 400px;
+      max-height: 85vh;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+    .close {
+      color: #aaa;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .close:hover {
+      color: #000;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn-primary {
+      background: #0078d4;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #005a9e;
+    }
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
+    .text-mapping-list {
+      margin-top: 15px;
+    }
+    .text-mapping-list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      background: #f9f9f9;
+      margin-bottom: 8px;
+      border-radius: 4px;
+    }
+    .delete-mapping-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .delete-mapping-btn:hover {
+      background: #c82333;
+    }
   </style>
 </head>
 <body>
@@ -226,18 +387,189 @@
       {% for file in files %}
         {% if current_path %}
           {% set file_url = '/view/' + current_path + '/' + encoded_files[loop.index0] %}
+          {% if current_path_display %}
+            {% set file_path = current_path_display + '/' + file %}
+          {% else %}
+            {% set file_path = file %}
+          {% endif %}
         {% else %}
           {% set file_url = '/view/' + encoded_files[loop.index0] %}
+          {% set file_path = file %}
         {% endif %}
-        <li class="file-icon" onclick="window.location.href='{{ file_url }}'">
-          <a href="{{ file_url }}">{{ file }}</a>
+        {% set file_path_normalized = file_path.replace('\\', '/') %}
+        {% if file_text_mappings %}
+          {% set mappings = file_text_mappings.get(file, []) %}
+        {% else %}
+          {% set mappings = [] %}
+        {% endif %}
+        <li class="file-icon">
+          <div class="file-item">
+            <div class="file-item-content" onclick="window.location.href='{{ file_url }}'">
+              <a href="{{ file_url }}" style="text-decoration: none; color: #0078d4; flex-shrink: 0; white-space: nowrap;">{{ file }}</a>
+            </div>
+            <button class="add-text-btn" onclick="event.stopPropagation(); openTextMappingModal('{{ file_path_normalized }}', '{{ file }}');" title="テキスト対応を追加">+</button>
+            {% if mappings and mappings|length > 0 %}
+              <div class="file-text-mapping">
+                {% for mapping in mappings %}
+                  <span class="file-text-mapping-item">{{ mapping.juku_name }}:{{ mapping.text_name }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
         </li>
       {% endfor %}
     </ul>
+
+    <!-- テキスト対応追加モーダル -->
+    <div id="textMappingModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>テキスト対応を追加</h2>
+          <span class="close" onclick="closeTextMappingModal()">&times;</span>
+        </div>
+        <div style="flex: 1; overflow-y: auto;">
+          <div class="form-group">
+            <label>ファイル名:</label>
+            <input type="text" id="modalFileName" readonly style="background: #f0f0f0;">
+          </div>
+          <div class="form-group">
+            <label>塾名:</label>
+            <input type="text" id="modalJukuName" placeholder="例: SAPIX">
+          </div>
+          <div class="form-group">
+            <label>テキスト名:</label>
+            <input type="text" id="modalTextName" placeholder="例: 61-01数の性質">
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-secondary" onclick="closeTextMappingModal()">キャンセル</button>
+            <button class="btn btn-primary" onclick="addTextMapping()">追加</button>
+          </div>
+          <div class="text-mapping-list" id="existingMappings"></div>
+        </div>
+      </div>
+    </div>
 
     {% if not folders and not files %}
       <p>フォルダまたはPDFファイルが見つかりません。</p>
     {% endif %}
   </div>
+
+  <script>
+    const fileTextMappings = {{ file_text_mappings | tojson }};
+    let currentFilePath = '';
+    let currentFileName = '';
+    let currentMappings = [];
+
+    function openTextMappingModal(filePath, fileName) {
+      currentFilePath = filePath;
+      currentFileName = fileName;
+      document.getElementById('modalFileName').value = fileName;
+      document.getElementById('modalJukuName').value = '';
+      document.getElementById('modalTextName').value = '';
+      document.getElementById('textMappingModal').style.display = 'block';
+      loadExistingMappings(fileName);
+    }
+
+    function closeTextMappingModal() {
+      document.getElementById('textMappingModal').style.display = 'none';
+    }
+
+    function loadExistingMappings(fileName) {
+      // 現在のページからマッピング情報を取得
+      currentMappings = fileTextMappings[fileName] || [];
+      
+      const container = document.getElementById('existingMappings');
+      if (currentMappings.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+      
+      container.innerHTML = '<div style="margin-bottom: 10px; font-weight: 500;">既存の対応:</div>';
+      currentMappings.forEach((mapping, index) => {
+        const item = document.createElement('div');
+        item.className = 'text-mapping-list-item';
+        // エスケープして安全に表示
+        const jukuName = mapping.juku_name.replace(/'/g, "\\'");
+        const textName = mapping.text_name.replace(/'/g, "\\'");
+        item.innerHTML = `
+          <span>${mapping.juku_name}:${mapping.text_name}</span>
+          <button class="delete-mapping-btn" onclick="deleteTextMapping('${jukuName}', '${textName}')">削除</button>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function addTextMapping() {
+      const jukuName = document.getElementById('modalJukuName').value.trim();
+      const textName = document.getElementById('modalTextName').value.trim();
+      
+      if (!jukuName || !textName) {
+        alert('塾名とテキスト名を入力してください。');
+        return;
+      }
+
+      fetch('/api/text-mapping', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file_path: currentFilePath,
+          juku_name: jukuName,
+          text_name: textName
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          location.reload();
+        } else {
+          alert('追加に失敗しました: ' + (data.error || '不明なエラー'));
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        alert('追加に失敗しました。');
+      });
+    }
+
+    function deleteTextMapping(jukuName, textName) {
+      if (!confirm(`「${jukuName}:${textName}」を削除しますか？`)) {
+        return;
+      }
+
+      fetch('/api/text-mapping', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file_path: currentFilePath,
+          juku_name: jukuName,
+          text_name: textName
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          location.reload();
+        } else {
+          alert('削除に失敗しました: ' + (data.error || '不明なエラー'));
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        alert('削除に失敗しました。');
+      });
+    }
+
+    // モーダルの外側をクリックしたら閉じる
+    window.onclick = function(event) {
+      const modal = document.getElementById('textMappingModal');
+      if (event.target == modal) {
+        closeTextMappingModal();
+      }
+    }
+  </script>
 </body>
 </html>

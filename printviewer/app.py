@@ -29,6 +29,8 @@ if POPPLER_PATH is None:
         POPPLER_PATH = default_poppler_path
 USERS_FILE = os.path.join(BASE_DIR, "users.csv")
 STUDENTS_DIR = os.path.join(BASE_DIR, "students")
+TEXT_MAPPING_FILE = os.path.join(BASE_DIR, "text_mapping.csv")
+FILE_NAME_HISTORY_FILE = os.path.join(BASE_DIR, "file_name_history.csv")
 
 # 必要なディレクトリを作成
 os.makedirs(STUDENTS_DIR, exist_ok=True)
@@ -305,6 +307,120 @@ def save_students(username, students):
             })
 
 
+def load_file_name_history():
+    """ファイル名変更履歴を読み込む"""
+    history = {}  # {current_path: old_path}
+    if os.path.exists(FILE_NAME_HISTORY_FILE):
+        with open(FILE_NAME_HISTORY_FILE, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                old_path = normalize_file_path(row["old_path"])
+                current_path = normalize_file_path(row["current_path"])
+                if current_path not in history:
+                    history[current_path] = []
+                history[current_path].append(old_path)
+    return history
+
+
+def save_file_name_history(history):
+    """ファイル名変更履歴を保存"""
+    with open(FILE_NAME_HISTORY_FILE, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["old_path", "current_path"])
+        writer.writeheader()
+        for current_path, old_paths in history.items():
+            for old_path in old_paths:
+                writer.writerow({
+                    "old_path": old_path,
+                    "current_path": current_path
+                })
+
+
+def find_mappings_by_folder_and_index(folder_path, file_index, text_mappings, all_files_in_folder):
+    """フォルダパスとファイルのインデックスを使ってマッピング情報を検索"""
+    # 同じフォルダ内のファイルで、マッピング情報があるものを探す
+    matched_mappings = []
+    
+    # フォルダパスが一致するマッピングを全て取得
+    folder_mappings = {}
+    for saved_path, mappings_list in text_mappings.items():
+        saved_folder = '/'.join(saved_path.split('/')[:-1]) if '/' in saved_path else ''
+        if saved_folder == folder_path or (not folder_path and not saved_folder):
+            saved_filename = saved_path.split('/')[-1] if '/' in saved_path else saved_path
+            folder_mappings[saved_filename] = mappings_list
+    
+    # フォルダ内のファイル数とマッピングがあるファイル数を比較
+    # もしマッピングがあるファイルが1つだけで、現在のフォルダにもファイルが1つだけなら、それを引き継ぐ
+    if len(all_files_in_folder) == 1 and len(folder_mappings) == 1:
+        # 唯一のマッピングを引き継ぐ
+        matched_mappings = list(folder_mappings.values())[0]
+    
+    return matched_mappings
+
+
+def load_text_mappings():
+    """テキスト対応情報を読み込む（正規化されたパスでマッピング）"""
+    mappings = {}  # {file_path: [{"juku_name": "...", "text_name": "..."}, ...]}
+    if os.path.exists(TEXT_MAPPING_FILE):
+        with open(TEXT_MAPPING_FILE, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                file_path = row["file_path"]
+                # 読み込み時も正規化して一貫性を保つ
+                normalized_path = normalize_file_path(file_path)
+                juku_name = row["juku_name"]
+                text_name = row["text_name"]
+                if normalized_path not in mappings:
+                    mappings[normalized_path] = []
+                mappings[normalized_path].append({
+                    "juku_name": juku_name,
+                    "text_name": text_name
+                })
+    return mappings
+
+
+def save_text_mappings(mappings):
+    """テキスト対応情報を保存"""
+    with open(TEXT_MAPPING_FILE, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["file_path", "juku_name", "text_name"])
+        writer.writeheader()
+        for file_path, items in mappings.items():
+            for item in items:
+                writer.writerow({
+                    "file_path": file_path,
+                    "juku_name": item["juku_name"],
+                    "text_name": item["text_name"]
+                })
+
+
+def add_text_mapping(file_path, juku_name, text_name):
+    """テキスト対応情報を追加"""
+    mappings = load_text_mappings()
+    if file_path not in mappings:
+        mappings[file_path] = []
+    # 既に同じ組み合わせが存在しないかチェック
+    for item in mappings[file_path]:
+        if item["juku_name"] == juku_name and item["text_name"] == text_name:
+            return  # 既に存在する場合は追加しない
+    mappings[file_path].append({
+        "juku_name": juku_name,
+        "text_name": text_name
+    })
+    save_text_mappings(mappings)
+
+
+def delete_text_mapping(file_path, juku_name, text_name):
+    """テキスト対応情報を削除"""
+    mappings = load_text_mappings()
+    if file_path in mappings:
+        mappings[file_path] = [
+            item for item in mappings[file_path]
+            if not (item["juku_name"] == juku_name and item["text_name"] == text_name)
+        ]
+        if not mappings[file_path]:
+            del mappings[file_path]
+        save_text_mappings(mappings)
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     """ログインページ"""
@@ -335,6 +451,52 @@ def index():
     """PDF一覧（フォルダ表示）"""
     # 空のパスでフォルダ表示を直接呼び出す
     return folder_view("")
+
+
+def normalize_file_path(file_path):
+    """ファイルパスを正規化（\を/に変換、連続するスラッシュを1つに、先頭・末尾のスラッシュを削除）"""
+    normalized = file_path.replace('\\', '/')
+    while '//' in normalized:
+        normalized = normalized.replace('//', '/')
+    return normalized.strip('/')
+
+
+@app.route("/api/text-mapping", methods=["POST"])
+@login_required
+def add_text_mapping_api():
+    """テキスト対応情報を追加するAPI"""
+    data = request.get_json()
+    file_path = data.get("file_path", "")
+    juku_name = data.get("juku_name", "").strip()
+    text_name = data.get("text_name", "").strip()
+    
+    if not file_path or not juku_name or not text_name:
+        return {"success": False, "error": "必要な情報が不足しています"}, 400
+    
+    # ファイルパスを正規化
+    file_path = normalize_file_path(file_path)
+    
+    add_text_mapping(file_path, juku_name, text_name)
+    return {"success": True}
+
+
+@app.route("/api/text-mapping", methods=["DELETE"])
+@login_required
+def delete_text_mapping_api():
+    """テキスト対応情報を削除するAPI"""
+    data = request.get_json()
+    file_path = data.get("file_path", "")
+    juku_name = data.get("juku_name", "").strip()
+    text_name = data.get("text_name", "").strip()
+    
+    if not file_path or not juku_name or not text_name:
+        return {"success": False, "error": "必要な情報が不足しています"}, 400
+    
+    # ファイルパスを正規化
+    file_path = normalize_file_path(file_path)
+    
+    delete_text_mapping(file_path, juku_name, text_name)
+    return {"success": True}
 
 
 @app.route("/folder/")
@@ -371,6 +533,58 @@ def folder_view(folder_path=""):
     else:
         current_path_display = ""
     
+    # テキスト対応情報を読み込む
+    text_mappings = load_text_mappings()
+    # ファイルパスをキーとして対応情報を取得
+    file_text_mappings = {}
+    for file in files:
+        # ファイルパスを生成（フォルダパス + ファイル名）
+        if decoded_folder_path:
+            file_path = decoded_folder_path.replace('\\', '/') + '/' + file
+        else:
+            file_path = file
+        # 正規化
+        file_path = normalize_file_path(file_path)
+        
+        # 正規化されたファイルパスでマッピング情報を取得
+        matched_mappings = []
+        
+        # デバッグ用：最初の数個のキーを出力
+        if file == files[0] if files else None:
+            sample_keys = list(text_mappings.keys())[:3]
+            print(f"DEBUG: Looking for file_path='{file_path}', file='{file}'")
+            print(f"DEBUG: Sample saved paths: {sample_keys}")
+        
+        # 完全一致で検索
+        if file_path in text_mappings:
+            matched_mappings = text_mappings[file_path]
+            print(f"DEBUG: Exact match found for '{file_path}', mappings count: {len(matched_mappings)}")
+            print(f"DEBUG: Mappings content: {matched_mappings}")
+        else:
+            # ファイル名だけで検索（フォルダパスが異なる場合に対応）
+            matched_by_filename = False
+            for saved_path, mappings_list in text_mappings.items():
+                # ファイル名の部分だけを比較
+                saved_filename = saved_path.split('/')[-1] if '/' in saved_path else saved_path
+                # ファイル名が一致するか確認
+                if saved_filename == file:
+                    matched_mappings = mappings_list
+                    print(f"DEBUG: Matched by filename: saved_path='{saved_path}', saved_filename='{saved_filename}', current_file='{file}', mappings count: {len(matched_mappings)}")
+                    print(f"DEBUG: Mappings content: {matched_mappings}")
+                    matched_by_filename = True
+                    break
+            
+            # ファイル名でマッチしなかった場合、フォルダ内で唯一のファイルなら引き継ぐ
+            if not matched_by_filename:
+                folder_path_for_search = decoded_folder_path if decoded_folder_path else ""
+                folder_path_for_search = normalize_file_path(folder_path_for_search)
+                folder_mappings = find_mappings_by_folder_and_index(folder_path_for_search, 0, text_mappings, files)
+                if folder_mappings:
+                    matched_mappings = folder_mappings
+                    print(f"DEBUG: Matched by folder (single file): folder='{folder_path_for_search}', mappings count: {len(matched_mappings)}")
+        
+        file_text_mappings[file] = matched_mappings
+    
     return render_template(
         "index.html",
         folders=folders,  # 表示用（デコード済み）
@@ -379,6 +593,7 @@ def folder_view(folder_path=""):
         encoded_files=encoded_files,  # URL用（エンコード済み）
         current_path=current_path_encoded,  # URL用（エンコード済み）
         current_path_display=current_path_display,  # 表示用（デコード済み）
+        file_text_mappings=file_text_mappings,  # ファイルごとのテキスト対応情報
         username=session.get("username", "unknown")
     )
 
